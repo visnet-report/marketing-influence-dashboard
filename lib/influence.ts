@@ -1,0 +1,493 @@
+// ── Influence engine ───────────────────────────────────────────────────────────
+// Converts contacts into touchpoints, matches them to companies, then joins
+// against deals with the halt rule: a touch influences a deal if it falls
+// before the deal's close date (closed deals) or before now (open deals),
+// and no earlier than LOOKBACK_DAYS before deal creation.
+
+import { LOOKBACK_DAYS, MAX_UNMATCHED_ROWS } from "./config";
+import type { MarketingContact } from "./hubspot";
+import type { CompanyLevelTouch } from "./linkedin-csv";
+import {
+  buildCompanyIndex,
+  matchContactToCompany,
+  registrableDomain,
+  isFreeEmailDomain,
+} from "./matching";
+import type {
+  Channel,
+  ChannelStats,
+  CompanyInfluence,
+  CompanyMatch,
+  Confidence,
+  CrmCompany,
+  CrmDeal,
+  InfluencedDeal,
+  InfluenceTouch,
+  MatchMethod,
+  MonthlyStats,
+  Snapshot,
+  Touchpoint,
+  UnmatchedActivity,
+} from "./types";
+
+// ── Touchpoint extraction ─────────────────────────────────────────────────────
+
+function sourceToChannel(source: string): Channel | null {
+  switch (source) {
+    case "PAID_SEARCH":
+      return "paid_search";
+    case "PAID_SOCIAL":
+      return "paid_social";
+    case "SOCIAL_MEDIA":
+      return "organic_social";
+    case "ORGANIC_SEARCH":
+      return "organic_search";
+    case "EMAIL_MARKETING":
+      return "email_marketing";
+    case "OTHER_CAMPAIGNS":
+      return "other";
+    default:
+      return null; // DIRECT_TRAFFIC, OFFLINE, REFERRALS → not marketing touches
+  }
+}
+
+function sourceDetail(network: string, campaign: string): { detail: string; campaign: string } {
+  const parts = [network, campaign].filter(Boolean);
+  return { detail: parts.join(" — "), campaign: campaign || network || "" };
+}
+
+export function extractTouchpoints(contact: MarketingContact): Touchpoint[] {
+  const touches: Touchpoint[] = [];
+  const name = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email;
+  const base = {
+    contactId: contact.id,
+    contactName: name,
+    contactEmail: contact.email,
+    contactCompanyText: contact.company,
+  };
+
+  // 1. Form submissions (first + most recent conversion)
+  if (contact.firstConversionDate && contact.firstConversionEvent) {
+    touches.push({
+      ...base,
+      channel: "form_submission",
+      date: contact.firstConversionDate,
+      detail: contact.firstConversionEvent,
+      campaign: contact.firstConversionEvent.split(":").pop()?.trim() ?? "",
+      source: "first_conversion",
+    });
+  }
+  if (
+    contact.recentConversionDate &&
+    contact.recentConversionEvent &&
+    contact.recentConversionDate !== contact.firstConversionDate
+  ) {
+    touches.push({
+      ...base,
+      channel: "form_submission",
+      date: contact.recentConversionDate,
+      detail: contact.recentConversionEvent,
+      campaign: contact.recentConversionEvent.split(":").pop()?.trim() ?? "",
+      source: "recent_conversion",
+    });
+  }
+
+  // 2. Original traffic source (dated at contact creation)
+  const originalChannel = sourceToChannel(contact.analyticsSource);
+  if (originalChannel && contact.createDate) {
+    const { detail, campaign } = sourceDetail(
+      contact.analyticsSourceData1,
+      contact.analyticsSourceData2
+    );
+    touches.push({
+      ...base,
+      channel: originalChannel,
+      date: contact.createDate,
+      detail: detail || contact.analyticsSource,
+      campaign,
+      source: "original_source",
+    });
+  }
+
+  // 3. Latest traffic source (only if it is a distinct later marketing session)
+  const latestChannel = sourceToChannel(contact.latestSource);
+  if (
+    latestChannel &&
+    contact.latestSourceTimestamp &&
+    contact.latestSourceTimestamp !== contact.createDate
+  ) {
+    const { detail, campaign } = sourceDetail(
+      contact.latestSourceData1,
+      contact.latestSourceData2
+    );
+    touches.push({
+      ...base,
+      channel: latestChannel,
+      date: contact.latestSourceTimestamp,
+      detail: detail || contact.latestSource,
+      campaign,
+      source: "latest_source",
+    });
+  }
+
+  return touches;
+}
+
+// ── Main computation ──────────────────────────────────────────────────────────
+
+export function computeSnapshot(
+  companies: CrmCompany[],
+  deals: CrmDeal[],
+  contacts: MarketingContact[],
+  startedAt: number,
+  companyLevelTouches: CompanyLevelTouch[] = []
+): Snapshot {
+  const index = buildCompanyIndex(companies);
+  const companyById = index.byId;
+
+  // Deals grouped by company
+  const dealsByCompany = new Map<string, CrmDeal[]>();
+  for (const d of deals) {
+    if (!d.companyId) continue;
+    const list = dealsByCompany.get(d.companyId) ?? [];
+    list.push(d);
+    dealsByCompany.set(d.companyId, list);
+  }
+
+  // Match contacts → companies, collect touches per company
+  const touchesByCompany = new Map<string, InfluenceTouch[]>();
+  const matchByContact = new Map<string, CompanyMatch>();
+  const unmatched: UnmatchedActivity[] = [];
+  const matchMethodCounts: Record<MatchMethod, number> = {
+    company_id: 0,
+    email_domain: 0,
+    exact_name: 0,
+    fuzzy_name: 0,
+  };
+  const confidenceCounts: Record<Confidence, number> = { High: 0, Medium: 0, Low: 0 };
+  let totalTouchpoints = 0;
+  let matchedContacts = 0;
+
+  for (const contact of contacts) {
+    const touches = extractTouchpoints(contact);
+    if (!touches.length) continue;
+    totalTouchpoints += touches.length;
+
+    const match = matchContactToCompany(
+      {
+        id: contact.id,
+        email: contact.email,
+        companyText: contact.company,
+        associatedCompanyId: contact.associatedCompanyId,
+        country: contact.country,
+      },
+      index
+    );
+
+    if (match) {
+      matchedContacts++;
+      matchByContact.set(contact.id, match);
+      matchMethodCounts[match.method]++;
+      confidenceCounts[match.confidence]++;
+      const list = touchesByCompany.get(match.companyId) ?? [];
+      for (const t of touches) {
+        list.push({
+          ...t,
+          matchMethod: match.method,
+          confidence: match.confidence,
+          matchScore: match.score,
+          matchEvidence: match.evidence,
+          timing: "before_creation", // recomputed per deal below
+        });
+      }
+      touchesByCompany.set(match.companyId, list);
+    } else if (unmatched.length < MAX_UNMATCHED_ROWS) {
+      const dates = touches.map((t) => t.date).sort();
+      const emailDomain = registrableDomain(contact.email);
+      const reason = !contact.company && (!emailDomain || isFreeEmailDomain(emailDomain))
+        ? "No company name and personal email"
+        : "No CRM company matched above threshold";
+      unmatched.push({
+        contactId: contact.id,
+        contactName:
+          [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.email,
+        contactEmail: contact.email,
+        contactCompanyText: contact.company,
+        channels: [...new Set(touches.map((t) => t.channel))],
+        firstActivity: dates[0],
+        lastActivity: dates[dates.length - 1],
+        touchCount: touches.length,
+        reason,
+      });
+    }
+  }
+
+  // Company-level visibility touches (LinkedIn Company Engagement Report CSVs)
+  // run through the same matcher via a synthetic contact: the report's company
+  // name (and domain when exported) drive domain/exact/fuzzy matching.
+  let csvIdx = 0;
+  for (const row of companyLevelTouches) {
+    csvIdx++;
+    totalTouchpoints++;
+    const match = matchContactToCompany(
+      {
+        id: `li-csv-${csvIdx}`,
+        email: row.domain ? `report@${row.domain}` : "",
+        companyText: row.companyName,
+        associatedCompanyId: "",
+        country: "",
+      },
+      index
+    );
+    if (match) {
+      matchMethodCounts[match.method]++;
+      confidenceCounts[match.confidence]++;
+      const list = touchesByCompany.get(match.companyId) ?? [];
+      list.push({
+        contactId: `li-csv-${csvIdx}`,
+        contactName: row.companyName,
+        contactEmail: "",
+        contactCompanyText: row.companyName,
+        channel: "linkedin_visibility",
+        date: row.date,
+        detail: row.detail,
+        campaign: row.campaign,
+        source: "linkedin_company_csv",
+        matchMethod: match.method,
+        confidence: match.confidence,
+        matchScore: match.score,
+        matchEvidence: match.evidence,
+        timing: "before_creation",
+      });
+      touchesByCompany.set(match.companyId, list);
+    } else if (unmatched.length < MAX_UNMATCHED_ROWS) {
+      unmatched.push({
+        contactId: `li-csv-${csvIdx}`,
+        contactName: row.companyName,
+        contactEmail: "",
+        contactCompanyText: row.companyName,
+        channels: ["linkedin_visibility"],
+        firstActivity: row.date,
+        lastActivity: row.date,
+        touchCount: 1,
+        reason: "LinkedIn engagement report company not found in CRM",
+      });
+    }
+  }
+
+  // Join touches against deals with halt + lookback rules
+  const now = Date.now();
+  const lookbackMs = LOOKBACK_DAYS * 24 * 3600 * 1000;
+  const influencedDeals: InfluencedDeal[] = [];
+
+  for (const [companyId, companyTouches] of touchesByCompany) {
+    const companyDeals = dealsByCompany.get(companyId);
+    if (!companyDeals) continue;
+    const company = companyById.get(companyId);
+    for (const deal of companyDeals) {
+      const created = Date.parse(deal.createDate);
+      if (Number.isNaN(created)) continue;
+      const halt = deal.isClosed && deal.closeDate ? Date.parse(deal.closeDate) : now;
+      const windowStart = created - lookbackMs;
+
+      const eligible: InfluenceTouch[] = [];
+      for (const t of companyTouches) {
+        const ts = Date.parse(t.date);
+        if (Number.isNaN(ts)) continue;
+        if (ts < windowStart || ts > halt) continue;
+        eligible.push({ ...t, timing: ts < created ? "before_creation" : "during_open" });
+      }
+      if (!eligible.length) continue;
+      eligible.sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+
+      const beforeCreation = eligible.filter((t) => t.timing === "before_creation");
+      influencedDeals.push({
+        dealId: deal.id,
+        dealName: deal.name,
+        companyId,
+        companyName: company?.name ?? "",
+        companyDomain: company?.domain ?? "",
+        companyCountry: company?.country ?? "",
+        amount: deal.amount,
+        currency: deal.currency,
+        createDate: deal.createDate,
+        closeDate: deal.closeDate,
+        stageLabel: deal.stageLabel,
+        isWon: deal.isWon,
+        isClosed: deal.isClosed,
+        touches: eligible,
+        firstTouch: eligible[0] ?? null,
+        lastTouchBeforeCreation: beforeCreation[beforeCreation.length - 1] ?? null,
+        lastTouch: eligible[eligible.length - 1] ?? null,
+        channels: [...new Set(eligible.map((t) => t.channel))],
+      });
+    }
+  }
+
+  // ── Aggregations ────────────────────────────────────────────────────────────
+
+  const channelMap = new Map<Channel, ChannelStats>();
+  const ensureChannel = (c: Channel): ChannelStats => {
+    let s = channelMap.get(c);
+    if (!s) {
+      s = {
+        channel: c,
+        touches: 0,
+        contacts: 0,
+        companies: 0,
+        influencedDeals: 0,
+        influencedValue: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        firstTouchDeals: 0,
+        firstTouchValue: 0,
+        lastTouchDeals: 0,
+        lastTouchValue: 0,
+      };
+      channelMap.set(c, s);
+    }
+    return s;
+  };
+
+  const channelContacts = new Map<Channel, Set<string>>();
+  const channelCompanies = new Map<Channel, Set<string>>();
+  for (const [companyId, touches] of touchesByCompany) {
+    for (const t of touches) {
+      const s = ensureChannel(t.channel);
+      s.touches++;
+      (channelContacts.get(t.channel) ?? channelContacts.set(t.channel, new Set()).get(t.channel)!).add(
+        t.contactId
+      );
+      (channelCompanies.get(t.channel) ?? channelCompanies.set(t.channel, new Set()).get(t.channel)!).add(
+        companyId
+      );
+    }
+  }
+  for (const [channel, set] of channelContacts) ensureChannel(channel).contacts = set.size;
+  for (const [channel, set] of channelCompanies) ensureChannel(channel).companies = set.size;
+
+  for (const d of influencedDeals) {
+    for (const c of d.channels) {
+      const s = ensureChannel(c);
+      s.influencedDeals++;
+      s.influencedValue += d.amount;
+      if (d.isWon) {
+        s.wonDeals++;
+        s.wonValue += d.amount;
+      }
+    }
+    if (d.firstTouch) {
+      const s = ensureChannel(d.firstTouch.channel);
+      s.firstTouchDeals++;
+      s.firstTouchValue += d.amount;
+    }
+    const lastAttrib = d.lastTouchBeforeCreation ?? d.lastTouch;
+    if (lastAttrib) {
+      const s = ensureChannel(lastAttrib.channel);
+      s.lastTouchDeals++;
+      s.lastTouchValue += d.amount;
+    }
+  }
+
+  // Monthly trend (last 18 months of deal creation)
+  const monthly = new Map<string, MonthlyStats>();
+  const monthKey = (iso: string) => iso.slice(0, 7);
+  const influencedIds = new Set(influencedDeals.map((d) => d.dealId));
+  const influencedById = new Map(influencedDeals.map((d) => [d.dealId, d]));
+  for (const d of deals) {
+    if (!d.createDate) continue;
+    const key = monthKey(d.createDate);
+    let m = monthly.get(key);
+    if (!m) {
+      m = { month: key, dealsCreated: 0, dealsValue: 0, influencedDeals: 0, influencedValue: 0, touches: 0 };
+      monthly.set(key, m);
+    }
+    m.dealsCreated++;
+    m.dealsValue += d.amount;
+    if (influencedIds.has(d.id)) {
+      m.influencedDeals++;
+      m.influencedValue += d.amount;
+      m.touches += influencedById.get(d.id)?.touches.length ?? 0;
+    }
+  }
+  const monthlySorted = [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-18);
+
+  // Per-company rollup
+  const companyInfluence: CompanyInfluence[] = [];
+  for (const [companyId, touches] of touchesByCompany) {
+    const company = companyById.get(companyId);
+    const companyDeals = dealsByCompany.get(companyId) ?? [];
+    const infDeals = influencedDeals.filter((d) => d.companyId === companyId);
+    const dates = touches.map((t) => t.date).sort();
+    const rank: Record<Confidence, number> = { High: 3, Medium: 2, Low: 1 };
+    const best = touches.reduce<Confidence>(
+      (acc, t) => (rank[t.confidence] > rank[acc] ? t.confidence : acc),
+      "Low"
+    );
+    companyInfluence.push({
+      companyId,
+      companyName: company?.name ?? "",
+      companyDomain: company?.domain ?? "",
+      companyCountry: company?.country ?? "",
+      matchMethods: [...new Set(touches.map((t) => t.matchMethod))],
+      bestConfidence: best,
+      touchCount: touches.length,
+      contactCount: new Set(touches.map((t) => t.contactId)).size,
+      channels: [...new Set(touches.map((t) => t.channel))],
+      firstTouchDate: dates[0] ?? "",
+      lastTouchDate: dates[dates.length - 1] ?? "",
+      dealCount: companyDeals.length,
+      influencedDealCount: infDeals.length,
+      totalDealValue: companyDeals.reduce((s, d) => s + d.amount, 0),
+      wonDealValue: companyDeals.filter((d) => d.isWon).reduce((s, d) => s + d.amount, 0),
+      touches: touches
+        .slice()
+        .sort((a, b) => Date.parse(a.date) - Date.parse(b.date))
+        .slice(0, 100),
+    });
+  }
+  companyInfluence.sort((a, b) => b.totalDealValue - a.totalDealValue);
+
+  // Totals
+  const totalValue = deals.reduce((s, d) => s + d.amount, 0);
+  const won = deals.filter((d) => d.isWon);
+  const open = deals.filter((d) => !d.isClosed);
+  const infWon = influencedDeals.filter((d) => d.isWon);
+  const infOpen = influencedDeals.filter((d) => !d.isClosed);
+
+  influencedDeals.sort((a, b) => Date.parse(b.createDate) - Date.parse(a.createDate));
+
+  return {
+    generatedAt: new Date().toISOString(),
+    syncDurationMs: Date.now() - startedAt,
+    currency: "GBP",
+    config: { lookbackDays: LOOKBACK_DAYS, fuzzyThreshold: 0.88 },
+    totals: {
+      deals: deals.length,
+      dealsValue: totalValue,
+      wonDeals: won.length,
+      wonValue: won.reduce((s, d) => s + d.amount, 0),
+      openDeals: open.length,
+      openValue: open.reduce((s, d) => s + d.amount, 0),
+      companies: companies.length,
+      companiesWithDeals: dealsByCompany.size,
+      marketingContacts: contacts.length,
+      matchedContacts,
+      touchpoints: totalTouchpoints,
+      influencedDeals: influencedDeals.length,
+      influencedValue: influencedDeals.reduce((s, d) => s + d.amount, 0),
+      influencedWonDeals: infWon.length,
+      influencedWonValue: infWon.reduce((s, d) => s + d.amount, 0),
+      influencedOpenDeals: infOpen.length,
+      influencedOpenValue: infOpen.reduce((s, d) => s + d.amount, 0),
+      influencedCompanies: new Set(influencedDeals.map((d) => d.companyId)).size,
+    },
+    channels: [...channelMap.values()].sort((a, b) => b.influencedValue - a.influencedValue),
+    monthly: monthlySorted,
+    deals: influencedDeals,
+    companies: companyInfluence,
+    unmatched,
+    matchMethodCounts,
+    confidenceCounts,
+  };
+}

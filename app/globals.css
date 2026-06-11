@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0b1120;
+  --surface: #111a2e;
+  --surface-2: #1a2540;
+  --border: #243352;
+  --text: #e6ebf5;
+  --text-dim: #8fa0bf;
+  --accent: #38bdf8;
+  --accent-2: #818cf8;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-feature-settings: "tnum";
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.3);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+}
+
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
