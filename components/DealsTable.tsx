@@ -127,9 +127,9 @@ export default function DealsTable({ snapshot, range }: { snapshot: Snapshot; ra
       </div>
 
       {/* Table */}
-      <div className="card table-scroll overflow-x-auto">
+      <div className="card table-scroll max-h-[75vh] overflow-auto">
         <table className="w-full min-w-[1350px] text-left text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-[var(--surface)] shadow-[0_1px_0_var(--border)]">
             <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wider text-[var(--text-dim)]">
               <th className="px-3 py-2.5">Deal Company</th>
               <th className="px-3 py-2.5">Deal</th>
