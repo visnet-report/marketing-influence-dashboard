@@ -14,7 +14,8 @@
 //   LINKEDIN_REFRESH_TOKEN                       – long-lived (≈1 yr) token;
 //                                                  exchanged for access tokens
 //   LINKEDIN_ACCESS_TOKEN                        – alternative: direct token
-//   LINKEDIN_AD_ACCOUNT_ID                       – numeric sponsored account id
+//   LINKEDIN_AD_ACCOUNT_ID                       – numeric sponsored account
+//                                                  id(s), comma-separated
 //   LINKEDIN_API_VERSION                         – default 202601
 //   LINKEDIN_VISIBILITY_LOOKBACK_DAYS            – default 30
 //   LINKEDIN_MIN_IMPRESSIONS                     – ignore rows below (default 5;
@@ -118,46 +119,47 @@ async function resolveOrganizations(
 }
 
 /**
- * Fetch impressions/clicks/engagements pivoted by MEMBER_COMPANY at daily
- * granularity for the configured ad account, and convert each (company, day)
- * row into a company-level visibility touchpoint.
+ * Fetch impressions/clicks/engagements pivoted by MEMBER_COMPANY at monthly
+ * granularity for the configured ad account(s), and convert each
+ * (company, month) row into a company-level visibility touchpoint.
+ *
+ * Notes from probing the live API (2026-06): demographic pivots like
+ * MEMBER_COMPANY only work with the Analytics finder (q=analytics, singular
+ * pivot=), not the Statistics finder; the response is not paginated. Monthly
+ * granularity keeps the snapshot compact — daily company rows ran to ~15k
+ * per 6 weeks on this account, which would bloat every matched deal's
+ * touch timeline.
  */
 export async function fetchLinkedInCompanyVisibility(): Promise<CompanyLevelTouch[]> {
   if (!linkedInConfigured()) return [];
   const token = await getAccessToken();
-  const accountId = process.env.LINKEDIN_AD_ACCOUNT_ID!;
+  const accountIds = (process.env.LINKEDIN_AD_ACCOUNT_ID ?? "")
+    .split(/[,\s]+/)
+    .filter(Boolean);
   const lookbackDays = Number(process.env.LINKEDIN_VISIBILITY_LOOKBACK_DAYS ?? 30);
   const minImpressions = Number(process.env.LINKEDIN_MIN_IMPRESSIONS ?? 5);
   const end = new Date();
   const start = new Date(end.getTime() - lookbackDays * 24 * 3600 * 1000);
 
+  const accountsParam = accountIds
+    .map((id) => encodeURIComponent(`urn:li:sponsoredAccount:${id}`))
+    .join(",");
   const qs = [
-    "q=statistics",
-    "pivots=List(MEMBER_COMPANY)",
-    "timeGranularity=DAILY",
+    "q=analytics",
+    "pivot=MEMBER_COMPANY",
+    "timeGranularity=MONTHLY",
     `dateRange=(start:${dateParam(start)},end:${dateParam(end)})`,
-    `accounts=List(${encodeURIComponent(`urn:li:sponsoredAccount:${accountId}`)})`,
+    `accounts=List(${accountsParam})`,
     "fields=impressions,clicks,totalEngagements,pivotValues,dateRange",
   ].join("&");
 
-  const rows: AnalyticsRow[] = [];
-  let startIdx = 0;
-  const COUNT = 1000;
-  // adAnalytics uses index pagination; loop until a short page comes back.
-  for (;;) {
-    const res = await fetch(`${API}/rest/adAnalytics?${qs}&start=${startIdx}&count=${COUNT}`, {
-      headers: liHeaders(token),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`LinkedIn adAnalytics ${res.status}: ${body.slice(0, 400)}`);
-    }
-    const data = await res.json();
-    const page: AnalyticsRow[] = data.elements ?? [];
-    rows.push(...page);
-    if (page.length < COUNT) break;
-    startIdx += COUNT;
+  const res = await fetch(`${API}/rest/adAnalytics?${qs}`, { headers: liHeaders(token) });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`LinkedIn adAnalytics ${res.status}: ${body.slice(0, 400)}`);
   }
+  const data = await res.json();
+  const rows: AnalyticsRow[] = data.elements ?? [];
 
   const companyRows = rows.filter(
     (r) => (r.impressions ?? 0) >= minImpressions && r.pivotValues?.length
