@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { Channel, Confidence, InfluencedDeal, Snapshot } from "@/lib/types";
 import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import {
+  CHANNEL_COLORS,
   CHANNEL_LABELS,
   ChannelBadge,
   ConfidenceBadge,
@@ -126,12 +127,13 @@ export default function DealsTable({ snapshot, range }: { snapshot: Snapshot; ra
 
       {/* Table */}
       <div className="card table-scroll overflow-x-auto">
-        <table className="w-full min-w-[1100px] text-left text-sm">
+        <table className="w-full min-w-[1350px] text-left text-sm">
           <thead>
             <tr className="border-b border-[var(--border)] text-xs uppercase tracking-wider text-[var(--text-dim)]">
               <th className="px-3 py-2.5">Deal Company</th>
               <th className="px-3 py-2.5">Deal</th>
               <th className="px-3 py-2.5">Channels</th>
+              <th className="px-3 py-2.5">Influencing Activity</th>
               <th className="px-3 py-2.5">Match</th>
               <th className="px-3 py-2.5">First Activity</th>
               <th className="px-3 py-2.5">Last Before Deal</th>
@@ -152,7 +154,7 @@ export default function DealsTable({ snapshot, range }: { snapshot: Snapshot; ra
             ))}
             {!filtered.length && (
               <tr>
-                <td colSpan={10} className="px-3 py-8 text-center text-[var(--text-dim)]">
+                <td colSpan={11} className="px-3 py-8 text-center text-[var(--text-dim)]">
                   No influenced deals match the current filters.
                 </td>
               </tr>
@@ -175,6 +177,20 @@ function bestConfidence(d: InfluencedDeal): Confidence {
   return "Low";
 }
 
+/** Distinct activities for a deal: one entry per unique (channel, name). */
+function dealActivities(deal: InfluencedDeal): { channel: Channel; name: string }[] {
+  const seen = new Set<string>();
+  const out: { channel: Channel; name: string }[] = [];
+  for (const t of deal.touches) {
+    const name = t.detail || t.campaign || CHANNEL_LABELS[t.channel];
+    const key = `${t.channel}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ channel: t.channel, name });
+  }
+  return out;
+}
+
 function Row({
   deal,
   expanded,
@@ -185,6 +201,7 @@ function Row({
   onToggle: () => void;
 }) {
   const methods = [...new Set(deal.touches.map((t) => t.matchMethod))];
+  const activities = dealActivities(deal);
   return (
     <>
       <tr
@@ -201,6 +218,23 @@ function Row({
               <ChannelBadge key={c} channel={c} />
             ))}
           </div>
+        </td>
+        <td className="max-w-80 px-3 py-2.5">
+          {activities.slice(0, 3).map((a, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-xs leading-5">
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: CHANNEL_COLORS[a.channel] }}
+                title={CHANNEL_LABELS[a.channel]}
+              />
+              <span className="truncate text-[var(--text-dim)]" title={`${CHANNEL_LABELS[a.channel]}: ${a.name}`}>
+                {a.name}
+              </span>
+            </div>
+          ))}
+          {activities.length > 3 && (
+            <div className="text-xs text-sky-400/80">+{activities.length - 3} more — click row</div>
+          )}
         </td>
         <td className="px-3 py-2.5">
           <div className="flex flex-wrap items-center gap-1">
@@ -235,7 +269,7 @@ function Row({
       </tr>
       {expanded && (
         <tr className="border-b border-[var(--border)]/50 bg-[var(--surface-2)]/40">
-          <td colSpan={10} className="px-6 py-3">
+          <td colSpan={11} className="px-6 py-3">
             <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">
               Touchpoint timeline ({deal.touches.length})
             </div>

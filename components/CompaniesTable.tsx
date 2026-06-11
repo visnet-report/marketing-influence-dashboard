@@ -56,6 +56,7 @@ export default function CompaniesTable({ snapshot, range }: { snapshot: Snapshot
         "Match Methods": c.matchMethods.join("; "),
         "Best Confidence": c.bestConfidence,
         Channels: c.channels.map((ch) => CHANNEL_LABELS[ch]).join("; "),
+        Activities: [...new Set(c.touches.map((t) => t.detail || t.campaign).filter(Boolean))].join(" | "),
         Contacts: c.contactCount,
         Touches: c.touchCount,
         "First Touch": c.firstTouchDate.slice(0, 10),
