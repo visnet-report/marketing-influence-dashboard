@@ -57,7 +57,8 @@ Typos like “EA Tecnology” match at Tier 4. Tune the lists/thresholds in
 | Paid social (LinkedIn) | …= PAID_SOCIAL (+ LinkedIn campaign name) |
 | Organic social | …= SOCIAL_MEDIA (+ post/campaign reference) |
 | Organic search / Email / Other | corresponding source values |
-| **LinkedIn Visibility (Company)** | Two feeds, same channel: (a) **automated** — LinkedIn Ads API `adAnalytics` pivoted by member company, pulled on every nightly sync when `LINKEDIN_*` env vars are set (paid impressions/clicks/engagements per company per day); (b) **manual** — Company Engagement Report CSVs in `imports/` (the only source that also covers *organic* company engagement; see `imports/README.md`) |
+| **LinkedIn Visibility (Company)** | Two feeds, same channel: (a) **automated** — LinkedIn Ads API `adAnalytics` pivoted by member company, pulled on every nightly sync when `LINKEDIN_*` env vars are set (paid impressions/clicks/engagements per company per day); (b) **uploaded** — Company Engagement Report CSVs via the dashboard's **Data Imports** tab (stored in Vercel Blob; the only source that also covers *organic* company engagement) |
+| **Organic Social (uploads)** | Company-level organic engagement CSVs uploaded via the **Data Imports** tab with the "Organic Social" channel — engager exports, social listening reports, event lists. Any CSV with a `Company Name`/`Company` column works; optional `Domain` improves match confidence |
 
 ## Setup
 
