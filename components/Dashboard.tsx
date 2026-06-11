@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { Snapshot } from "@/lib/types";
+import { ALL_TIME, todayYmd, type DateRange } from "@/lib/date-range";
 import Overview from "./Overview";
 import DealsTable from "./DealsTable";
 import CompaniesTable from "./CompaniesTable";
 import MatchingAudit from "./MatchingAudit";
+import DateFilter from "./DateFilter";
 import { fmtDateTime } from "./ui";
 
 type Tab = "overview" | "deals" | "companies" | "matching";
@@ -21,6 +23,7 @@ export default function Dashboard() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
+  const [range, setRange] = useState<DateRange>(ALL_TIME);
 
   useEffect(() => {
     fetch("/api/data")
@@ -62,9 +65,13 @@ export default function Dashboard() {
     );
   }
 
+  const minDate =
+    snapshot.daily?.[0]?.date ??
+    (snapshot.monthly[0] ? `${snapshot.monthly[0].month}-01` : todayYmd());
+
   return (
     <Shell generatedAt={snapshot.generatedAt}>
-      <nav className="mb-6 flex gap-1 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
+      <nav className="mb-3 flex gap-1 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -79,10 +86,13 @@ export default function Dashboard() {
           </button>
         ))}
       </nav>
-      {tab === "overview" && <Overview snapshot={snapshot} />}
-      {tab === "deals" && <DealsTable snapshot={snapshot} />}
-      {tab === "companies" && <CompaniesTable snapshot={snapshot} />}
-      {tab === "matching" && <MatchingAudit snapshot={snapshot} />}
+      <div className="mb-6">
+        <DateFilter value={range} onChange={setRange} minDate={minDate} />
+      </div>
+      {tab === "overview" && <Overview snapshot={snapshot} range={range} />}
+      {tab === "deals" && <DealsTable snapshot={snapshot} range={range} />}
+      {tab === "companies" && <CompaniesTable snapshot={snapshot} range={range} />}
+      {tab === "matching" && <MatchingAudit snapshot={snapshot} range={range} />}
     </Shell>
   );
 }

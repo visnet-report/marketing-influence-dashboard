@@ -21,6 +21,7 @@ import type {
   Confidence,
   CrmCompany,
   CrmDeal,
+  DailyStats,
   InfluencedDeal,
   InfluenceTouch,
   MatchMethod,
@@ -389,28 +390,57 @@ export function computeSnapshot(
     }
   }
 
-  // Monthly trend (last 18 months of deal creation)
+  // Monthly + daily deal-creation totals (full history — the dashboard's date
+  // selector needs exact denominators for any custom range).
   const monthly = new Map<string, MonthlyStats>();
-  const monthKey = (iso: string) => iso.slice(0, 7);
+  const daily = new Map<string, DailyStats>();
   const influencedIds = new Set(influencedDeals.map((d) => d.dealId));
   const influencedById = new Map(influencedDeals.map((d) => [d.dealId, d]));
   for (const d of deals) {
     if (!d.createDate) continue;
-    const key = monthKey(d.createDate);
-    let m = monthly.get(key);
+    const mKey = d.createDate.slice(0, 7);
+    let m = monthly.get(mKey);
     if (!m) {
-      m = { month: key, dealsCreated: 0, dealsValue: 0, influencedDeals: 0, influencedValue: 0, touches: 0 };
-      monthly.set(key, m);
+      m = { month: mKey, dealsCreated: 0, dealsValue: 0, influencedDeals: 0, influencedValue: 0, touches: 0 };
+      monthly.set(mKey, m);
     }
     m.dealsCreated++;
     m.dealsValue += d.amount;
+    const dKey = d.createDate.slice(0, 10);
+    let day = daily.get(dKey);
+    if (!day) {
+      day = {
+        date: dKey,
+        dealsCreated: 0,
+        dealsValue: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        openDeals: 0,
+        openValue: 0,
+        influencedDeals: 0,
+        influencedValue: 0,
+      };
+      daily.set(dKey, day);
+    }
+    day.dealsCreated++;
+    day.dealsValue += d.amount;
+    if (d.isWon) {
+      day.wonDeals++;
+      day.wonValue += d.amount;
+    } else if (!d.isClosed) {
+      day.openDeals++;
+      day.openValue += d.amount;
+    }
     if (influencedIds.has(d.id)) {
       m.influencedDeals++;
       m.influencedValue += d.amount;
       m.touches += influencedById.get(d.id)?.touches.length ?? 0;
+      day.influencedDeals++;
+      day.influencedValue += d.amount;
     }
   }
-  const monthlySorted = [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month)).slice(-18);
+  const monthlySorted = [...monthly.values()].sort((a, b) => a.month.localeCompare(b.month));
+  const dailySorted = [...daily.values()].sort((a, b) => a.date.localeCompare(b.date));
 
   // Per-company rollup
   const companyInfluence: CompanyInfluence[] = [];
@@ -484,6 +514,7 @@ export function computeSnapshot(
     },
     channels: [...channelMap.values()].sort((a, b) => b.influencedValue - a.influencedValue),
     monthly: monthlySorted,
+    daily: dailySorted,
     deals: influencedDeals,
     companies: companyInfluence,
     unmatched,

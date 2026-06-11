@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Snapshot } from "@/lib/types";
+import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import {
   ChannelBadge,
   ConfidenceBadge,
@@ -12,19 +13,38 @@ import {
   CHANNEL_LABELS,
 } from "./ui";
 
-export default function CompaniesTable({ snapshot }: { snapshot: Snapshot }) {
+export default function CompaniesTable({ snapshot, range }: { snapshot: Snapshot; range: DateRange }) {
   const [search, setSearch] = useState("");
   const [onlyWithDeals, setOnlyWithDeals] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  const all = isAllTime(range);
+
+  // Companies with an influenced deal created in the period
+  const companiesWithDealsInRange = useMemo(() => {
+    if (all) return null;
+    const set = new Set<string>();
+    for (const d of snapshot.deals) {
+      if (inRange(d.createDate, range)) set.add(d.companyId);
+    }
+    return set;
+  }, [snapshot.deals, range, all]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return snapshot.companies.filter((c) => {
       if (onlyWithDeals && c.dealCount === 0) return false;
       if (q && !c.companyName.toLowerCase().includes(q)) return false;
+      // Period filter: keep companies with marketing activity in the period OR
+      // an influenced deal created in the period.
+      if (!all) {
+        const touchInRange = c.touches.some((t) => inRange(t.date, range));
+        const dealInRange = companiesWithDealsInRange?.has(c.companyId) ?? false;
+        if (!touchInRange && !dealInRange) return false;
+      }
       return true;
     });
-  }, [snapshot.companies, search, onlyWithDeals]);
+  }, [snapshot.companies, search, onlyWithDeals, range, all, companiesWithDealsInRange]);
 
   function exportCsv() {
     downloadCsv(
@@ -66,6 +86,11 @@ export default function CompaniesTable({ snapshot }: { snapshot: Snapshot }) {
           />
           Only companies with deals
         </label>
+        {!all && (
+          <span className="text-xs text-[var(--text-dim)]">
+            Showing companies with activity or influenced deals in {range.label}; deal/value columns are all-time.
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs text-[var(--text-dim)]">{filtered.length.toLocaleString()} companies</span>
           <button

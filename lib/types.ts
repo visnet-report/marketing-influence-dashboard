@@ -160,6 +160,19 @@ export interface MonthlyStats {
   touches: number;
 }
 
+/** Per-day deal-creation totals — exact denominators for custom date ranges. */
+export interface DailyStats {
+  date: string; // YYYY-MM-DD
+  dealsCreated: number;
+  dealsValue: number;
+  wonDeals: number;
+  wonValue: number;
+  openDeals: number;
+  openValue: number;
+  influencedDeals: number;
+  influencedValue: number;
+}
+
 export interface Snapshot {
   generatedAt: string;
   syncDurationMs: number;
@@ -190,6 +203,8 @@ export interface Snapshot {
   };
   channels: ChannelStats[];
   monthly: MonthlyStats[];
+  /** Optional for snapshots generated before daily stats existed. */
+  daily?: DailyStats[];
   deals: InfluencedDeal[];
   companies: CompanyInfluence[];
   unmatched: UnmatchedActivity[];

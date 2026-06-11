@@ -1,11 +1,23 @@
 "use client";
 
+import { useMemo } from "react";
 import type { Snapshot } from "@/lib/types";
+import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import { ChannelBadge, METHOD_LABELS, downloadCsv, fmtDate, Kpi } from "./ui";
 
-export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
+export default function MatchingAudit({ snapshot, range }: { snapshot: Snapshot; range: DateRange }) {
   const m = snapshot.matchMethodCounts;
   const c = snapshot.confidenceCounts;
+  const all = isAllTime(range);
+  const unmatched = useMemo(
+    () =>
+      all
+        ? snapshot.unmatched
+        : snapshot.unmatched.filter(
+            (u) => inRange(u.firstActivity, range) || inRange(u.lastActivity, range)
+          ),
+    [snapshot.unmatched, range, all]
+  );
   const matched = snapshot.totals.matchedContacts;
   const totalContacts = snapshot.totals.marketingContacts;
   const matchRate = totalContacts ? ((matched / totalContacts) * 100).toFixed(1) : "0";
@@ -13,7 +25,7 @@ export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
   function exportUnmatched() {
     downloadCsv(
       `unmatched-marketing-contacts-${new Date().toISOString().slice(0, 10)}.csv`,
-      snapshot.unmatched.map((u) => ({
+      unmatched.map((u) => ({
         Contact: u.contactName,
         Email: u.contactEmail,
         "Company (as typed)": u.contactCompanyText,
@@ -29,7 +41,12 @@ export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Match Rate" value={`${matchRate}%`} sub={`${matched} of ${totalContacts} marketing contacts`} accent="var(--accent)" />
+        <Kpi
+          label="Match Rate"
+          value={`${matchRate}%`}
+          sub={`${matched} of ${totalContacts} marketing contacts (all-time)`}
+          accent="var(--accent)"
+        />
         <Kpi label="High Confidence" value={c.High.toLocaleString()} accent="var(--good)" />
         <Kpi label="Medium Confidence" value={c.Medium.toLocaleString()} accent="var(--warn)" />
         <Kpi label="Low Confidence" value={c.Low.toLocaleString()} accent="var(--bad)" />
@@ -73,7 +90,8 @@ export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
       <div className="card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--text-dim)]">
-            Unmatched marketing-engaged contacts ({snapshot.unmatched.length})
+            Unmatched marketing-engaged contacts ({unmatched.length}
+            {all ? "" : ` in ${range.label}`})
           </h2>
           <button
             onClick={exportUnmatched}
@@ -98,7 +116,7 @@ export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
               </tr>
             </thead>
             <tbody>
-              {snapshot.unmatched.map((u) => (
+              {unmatched.map((u) => (
                 <tr key={u.contactId} className="border-b border-[var(--border)]/50">
                   <td className="px-3 py-2">
                     <div className="font-medium">{u.contactName}</div>
@@ -118,10 +136,12 @@ export default function MatchingAudit({ snapshot }: { snapshot: Snapshot }) {
                   <td className="px-3 py-2 text-xs text-[var(--text-dim)]">{u.reason}</td>
                 </tr>
               ))}
-              {!snapshot.unmatched.length && (
+              {!unmatched.length && (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-[var(--text-dim)]">
-                    Every marketing-engaged contact was matched 🎉
+                    {all
+                      ? "Every marketing-engaged contact was matched 🎉"
+                      : `No unmatched contacts with activity in ${range.label}.`}
                   </td>
                 </tr>
               )}

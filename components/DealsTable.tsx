@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Channel, Confidence, InfluencedDeal, Snapshot } from "@/lib/types";
+import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import {
   CHANNEL_LABELS,
   ChannelBadge,
@@ -14,7 +15,7 @@ import {
 
 type StatusFilter = "all" | "open" | "won" | "lost";
 
-export default function DealsTable({ snapshot }: { snapshot: Snapshot }) {
+export default function DealsTable({ snapshot, range }: { snapshot: Snapshot; range: DateRange }) {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [channel, setChannel] = useState<Channel | "all">("all");
   const [confidence, setConfidence] = useState<Confidence | "all">("all");
@@ -29,6 +30,7 @@ export default function DealsTable({ snapshot }: { snapshot: Snapshot }) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return snapshot.deals.filter((d) => {
+      if (!isAllTime(range) && !inRange(d.createDate, range)) return false;
       if (status === "open" && d.isClosed) return false;
       if (status === "won" && !d.isWon) return false;
       if (status === "lost" && (!d.isClosed || d.isWon)) return false;
@@ -38,7 +40,7 @@ export default function DealsTable({ snapshot }: { snapshot: Snapshot }) {
         return false;
       return true;
     });
-  }, [snapshot.deals, status, channel, confidence, search]);
+  }, [snapshot.deals, status, channel, confidence, search, range]);
 
   const totalValue = filtered.reduce((s, d) => s + d.amount, 0);
 
