@@ -3,7 +3,7 @@ node_modules/
 .vercel/
 .env
 .env.local
-data/
+/data/
 *.tsbuildinfo
 next-env.d.ts
 
