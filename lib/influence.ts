@@ -22,6 +22,7 @@ import type {
   CrmCompany,
   CrmDeal,
   DailyStats,
+  DealTouch,
   InfluencedDeal,
   InfluenceTouch,
   MatchMethod,
@@ -30,6 +31,17 @@ import type {
   Touchpoint,
   UnmatchedActivity,
 } from "./types";
+
+/** Accessors for the index-based touch references on InfluencedDeal. */
+export function dealFirstTouch(d: InfluencedDeal): DealTouch | null {
+  return d.touches[d.firstTouchIdx] ?? null;
+}
+export function dealLastTouchBeforeCreation(d: InfluencedDeal): DealTouch | null {
+  return d.lastTouchBeforeCreationIdx >= 0 ? (d.touches[d.lastTouchBeforeCreationIdx] ?? null) : null;
+}
+export function dealLastTouch(d: InfluencedDeal): DealTouch | null {
+  return d.touches[d.lastTouchIdx] ?? null;
+}
 
 // ── Touchpoint extraction ─────────────────────────────────────────────────────
 
@@ -291,17 +303,33 @@ export function computeSnapshot(
       const halt = deal.isClosed && deal.closeDate ? Date.parse(deal.closeDate) : now;
       const windowStart = created - lookbackMs;
 
-      const eligible: InfluenceTouch[] = [];
+      const eligible: DealTouch[] = [];
       for (const t of companyTouches) {
         const ts = Date.parse(t.date);
         if (Number.isNaN(ts)) continue;
         if (ts < windowStart || ts > halt) continue;
-        eligible.push({ ...t, timing: ts < created ? "before_creation" : "during_open" });
+        eligible.push({
+          contactId: t.contactId,
+          contactName: t.contactName,
+          channel: t.channel,
+          date: t.date,
+          detail: t.detail,
+          campaign: t.campaign,
+          matchMethod: t.matchMethod,
+          confidence: t.confidence,
+          timing: ts < created ? "before_creation" : "during_open",
+        });
       }
       if (!eligible.length) continue;
       eligible.sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
 
-      const beforeCreation = eligible.filter((t) => t.timing === "before_creation");
+      let lastBeforeIdx = -1;
+      for (let i = eligible.length - 1; i >= 0; i--) {
+        if (eligible[i].timing === "before_creation") {
+          lastBeforeIdx = i;
+          break;
+        }
+      }
       influencedDeals.push({
         dealId: deal.id,
         dealName: deal.name,
@@ -317,9 +345,9 @@ export function computeSnapshot(
         isWon: deal.isWon,
         isClosed: deal.isClosed,
         touches: eligible,
-        firstTouch: eligible[0] ?? null,
-        lastTouchBeforeCreation: beforeCreation[beforeCreation.length - 1] ?? null,
-        lastTouch: eligible[eligible.length - 1] ?? null,
+        firstTouchIdx: 0,
+        lastTouchBeforeCreationIdx: lastBeforeIdx,
+        lastTouchIdx: eligible.length - 1,
         channels: [...new Set(eligible.map((t) => t.channel))],
       });
     }
@@ -377,12 +405,13 @@ export function computeSnapshot(
         s.wonValue += d.amount;
       }
     }
-    if (d.firstTouch) {
-      const s = ensureChannel(d.firstTouch.channel);
+    const first = dealFirstTouch(d);
+    if (first) {
+      const s = ensureChannel(first.channel);
       s.firstTouchDeals++;
       s.firstTouchValue += d.amount;
     }
-    const lastAttrib = d.lastTouchBeforeCreation ?? d.lastTouch;
+    const lastAttrib = dealLastTouchBeforeCreation(d) ?? dealLastTouch(d);
     if (lastAttrib) {
       const s = ensureChannel(lastAttrib.channel);
       s.lastTouchDeals++;

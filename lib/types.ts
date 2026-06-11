@@ -79,6 +79,23 @@ export interface InfluenceTouch extends Touchpoint {
   timing: "before_creation" | "during_open";
 }
 
+/**
+ * Compact per-deal touch — the snapshot stores tens of thousands of these, so
+ * only fields the deal views actually render are kept (full detail lives on
+ * the company rollup's InfluenceTouch list).
+ */
+export interface DealTouch {
+  contactId: string;
+  contactName: string;
+  channel: Channel;
+  date: string;
+  detail: string;
+  campaign: string;
+  matchMethod: MatchMethod;
+  confidence: Confidence;
+  timing: "before_creation" | "during_open";
+}
+
 export interface InfluencedDeal {
   dealId: string;
   dealName: string;
@@ -93,12 +110,14 @@ export interface InfluencedDeal {
   stageLabel: string;
   isWon: boolean;
   isClosed: boolean;
-  touches: InfluenceTouch[];
-  firstTouch: InfluenceTouch | null;
+  /** Eligible touches sorted by date ascending. */
+  touches: DealTouch[];
+  /** Indexes into touches (-1 when absent) — avoids duplicating touch objects. */
+  firstTouchIdx: number;
   /** Last touch dated before the deal was created. */
-  lastTouchBeforeCreation: InfluenceTouch | null;
+  lastTouchBeforeCreationIdx: number;
   /** Last eligible touch overall (before close / now). */
-  lastTouch: InfluenceTouch | null;
+  lastTouchIdx: number;
   channels: Channel[];
 }
 

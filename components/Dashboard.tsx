@@ -36,6 +36,16 @@ export default function Dashboard() {
         }
         return res.json();
       })
+      .then(async (payload) => {
+        // Blob mode returns a pointer; the browser fetches the (large)
+        // snapshot straight from the CDN.
+        if (payload && typeof payload.url === "string" && !payload.totals) {
+          const res = await fetch(payload.url);
+          if (!res.ok) throw new Error(`Failed to download snapshot (${res.status})`);
+          return res.json();
+        }
+        return payload;
+      })
       .then((s) => {
         setSnapshot(s);
         setError(null);

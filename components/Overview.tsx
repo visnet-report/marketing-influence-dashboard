@@ -15,6 +15,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Channel, Snapshot } from "@/lib/types";
+import { dealFirstTouch, dealLastTouch, dealLastTouchBeforeCreation } from "@/lib/influence";
 import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import { CHANNEL_COLORS, CHANNEL_LABELS, Kpi, fmtGBP, fmtGBPFull } from "./ui";
 
@@ -120,12 +121,13 @@ export default function Overview({ snapshot, range }: { snapshot: Snapshot; rang
       for (const t of d.touches) {
         get(t.channel).touches.add(`${t.contactId}|${t.date}`);
       }
-      if (d.firstTouch) {
-        const a = get(d.firstTouch.channel);
+      const first = dealFirstTouch(d);
+      if (first) {
+        const a = get(first.channel);
         a.first++;
         a.firstValue += d.amount;
       }
-      const lastAttrib = d.lastTouchBeforeCreation ?? d.lastTouch;
+      const lastAttrib = dealLastTouchBeforeCreation(d) ?? dealLastTouch(d);
       if (lastAttrib) {
         const a = get(lastAttrib.channel);
         a.last++;

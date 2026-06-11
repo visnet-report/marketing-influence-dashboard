@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { Channel, Confidence, InfluencedDeal, Snapshot } from "@/lib/types";
+import { dealFirstTouch, dealLastTouch, dealLastTouchBeforeCreation } from "@/lib/influence";
 import { inRange, isAllTime, type DateRange } from "@/lib/date-range";
 import {
   CHANNEL_COLORS,
@@ -57,9 +58,9 @@ export default function DealsTable({ snapshot, range }: { snapshot: Snapshot; ra
         "Marketing Activities": d.touches.map((t) => `${CHANNEL_LABELS[t.channel]}: ${t.detail}`).join(" | "),
         Channels: d.channels.map((c) => CHANNEL_LABELS[c]).join("; "),
         Campaigns: [...new Set(d.touches.map((t) => t.campaign).filter(Boolean))].join("; "),
-        "First Activity": d.firstTouch?.date.slice(0, 10) ?? "",
-        "Last Activity Before Deal": d.lastTouchBeforeCreation?.date.slice(0, 10) ?? "",
-        "Last Activity": d.lastTouch?.date.slice(0, 10) ?? "",
+        "First Activity": dealFirstTouch(d)?.date.slice(0, 10) ?? "",
+        "Last Activity Before Deal": dealLastTouchBeforeCreation(d)?.date.slice(0, 10) ?? "",
+        "Last Activity": dealLastTouch(d)?.date.slice(0, 10) ?? "",
         "Deal Created": d.createDate.slice(0, 10),
         "Deal Close Date": d.closeDate.slice(0, 10),
         "Deal Stage": d.stageLabel,
@@ -244,9 +245,9 @@ function Row({
             <ConfidenceBadge value={bestConfidence(deal)} />
           </div>
         </td>
-        <td className="whitespace-nowrap px-3 py-2.5">{fmtDate(deal.firstTouch?.date ?? "")}</td>
+        <td className="whitespace-nowrap px-3 py-2.5">{fmtDate(dealFirstTouch(deal)?.date ?? "")}</td>
         <td className="whitespace-nowrap px-3 py-2.5">
-          {fmtDate(deal.lastTouchBeforeCreation?.date ?? "")}
+          {fmtDate(dealLastTouchBeforeCreation(deal)?.date ?? "")}
         </td>
         <td className="whitespace-nowrap px-3 py-2.5">{fmtDate(deal.createDate)}</td>
         <td className="whitespace-nowrap px-3 py-2.5">
@@ -289,7 +290,7 @@ function Row({
                   </span>
                   <span className="font-medium">{t.contactName}</span>
                   <span className="text-[var(--text-dim)]">{t.detail}</span>
-                  <span className="ml-auto text-[var(--text-dim)]" title={t.matchEvidence}>
+                  <span className="ml-auto text-[var(--text-dim)]">
                     <MethodBadge method={t.matchMethod} /> <ConfidenceBadge value={t.confidence} />
                   </span>
                 </div>
