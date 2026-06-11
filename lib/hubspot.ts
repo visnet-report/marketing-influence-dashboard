@@ -64,7 +64,15 @@ export async function fetchDealStages(): Promise<Map<string, StageInfo>> {
 // ── Companies ─────────────────────────────────────────────────────────────────
 
 export async function fetchAllCompanies(): Promise<CrmCompany[]> {
-  const props = ["name", "domain", "country", "zip", "website"];
+  const props = [
+    "name",
+    "domain",
+    "country",
+    "zip",
+    "website",
+    "hs_most_recent_de_anonymized_visit",
+    "hs_intent_page_views_last_30_days",
+  ];
   const companies: CrmCompany[] = [];
   let after: string | undefined;
   do {
@@ -79,6 +87,8 @@ export async function fetchAllCompanies(): Promise<CrmCompany[]> {
         country: r.properties?.country ?? "",
         zip: r.properties?.zip ?? "",
         website: r.properties?.website ?? "",
+        lastIntentVisit: r.properties?.hs_most_recent_de_anonymized_visit ?? "",
+        intentPageViews30d: Number(r.properties?.hs_intent_page_views_last_30_days ?? 0) || 0,
       });
     }
     after = data.paging?.next?.after;
@@ -185,6 +195,7 @@ const MARKETING_SOURCES = [
   "EMAIL_MARKETING",
   "REFERRALS",
   "AI_REFERRALS",
+  "DIRECT_TRAFFIC",
   "OTHER_CAMPAIGNS",
 ];
 

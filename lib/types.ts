@@ -55,6 +55,10 @@ export interface CrmCompany {
   country: string;
   zip: string;
   website: string;
+  /** hs_most_recent_de_anonymized_visit — real date of last tracked visit. */
+  lastIntentVisit: string;
+  /** hs_intent_page_views_last_30_days. */
+  intentPageViews30d: number;
 }
 
 export interface CrmDeal {

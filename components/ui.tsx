@@ -11,7 +11,7 @@ export const CHANNEL_LABELS: Record<Channel, string> = {
   email_marketing: "Email Marketing",
   referral: "Referrals",
   ai_referral: "AI Referrals",
-  direct: "Direct",
+  direct: "Direct Traffic",
   linkedin_visibility: "Paid LinkedIn Visibility (Company)",
   organic_social_visibility: "Organic LinkedIn Visibility (Company)",
   other: "Other Campaigns",

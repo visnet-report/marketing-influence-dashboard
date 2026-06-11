@@ -63,9 +63,10 @@ function sourceToChannel(source: string): Channel | null {
       return "ai_referral";
     case "OTHER_CAMPAIGNS":
       return "other";
+    case "DIRECT_TRAFFIC":
+      return "direct";
     default:
-      // DIRECT_TRAFFIC and OFFLINE are deliberately excluded: neither is a
-      // marketing-driven touch (typed URL / imported record).
+      // OFFLINE stays excluded: imported/sales-created records, not visits.
       return null;
   }
 }
@@ -272,7 +273,20 @@ export function computeSnapshot(
     if (match) {
       matchMethodCounts[match.method]++;
       confidenceCounts[match.confidence]++;
-      const matchedName = row.companyName || companyById.get(match.companyId)?.name || "";
+      const matchedCompany = companyById.get(match.companyId);
+      const matchedName = row.companyName || matchedCompany?.name || "";
+      // HubSpot list rows (Buyer Intent) carry the join date, which is wrong
+      // for pre-existing members — prefer the company's real last tracked
+      // visit timestamp when HubSpot has one.
+      let touchDate = row.date;
+      let touchDetail = row.detail;
+      if (row.companyId && matchedCompany?.lastIntentVisit) {
+        touchDate = matchedCompany.lastIntentVisit;
+        touchDetail += " — dated by last tracked visit";
+      }
+      if (row.companyId && matchedCompany?.intentPageViews30d) {
+        touchDetail += `, ${matchedCompany.intentPageViews30d} tracked page views (30d)`;
+      }
       const list = touchesByCompany.get(match.companyId) ?? [];
       list.push({
         contactId: `li-csv-${csvIdx}`,
@@ -280,8 +294,8 @@ export function computeSnapshot(
         contactEmail: "",
         contactCompanyText: matchedName,
         channel: row.channel ?? "linkedin_visibility",
-        date: row.date,
-        detail: row.detail,
+        date: touchDate,
+        detail: touchDetail,
         campaign: row.campaign,
         source: "linkedin_company_csv",
         matchMethod: match.method,

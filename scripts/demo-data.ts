@@ -107,6 +107,8 @@ function buildCompanies(): CrmCompany[] {
     country,
     zip: "",
     website: rand() < 0.5 ? `https://www.${domain}` : "",
+    lastIntentVisit: rand() < 0.3 ? dateBetween("2026-04-01", "2026-06-10") : "",
+    intentPageViews30d: rand() < 0.3 ? Math.floor(rand() * 40) : 0,
   }));
 }
 
