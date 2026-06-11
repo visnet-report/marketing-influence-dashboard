@@ -10,12 +10,16 @@
 // filename (e.g. "2026-06-01 linkedin-engagement.csv"), falling back to the
 // file's modified time.
 
+import type { Channel } from "./types";
+
 export interface CompanyLevelTouch {
   companyName: string;
   domain: string;
   date: string; // ISO
   detail: string;
   campaign: string;
+  /** Which marketing channel this company-level touch belongs to. */
+  channel: Channel;
 }
 
 const NAME_COLUMNS = ["company name", "companyname", "company", "account", "company page", "organization"];
@@ -97,7 +101,8 @@ function dateFromFilename(filename: string, fallback: Date): string {
 export function parseEngagementCsv(
   filename: string,
   content: string,
-  mtime: Date
+  mtime: Date,
+  channel: Channel = "linkedin_visibility"
 ): CompanyLevelTouch[] {
   const rows = parseCsv(content);
   if (rows.length < 2) return [];
@@ -138,12 +143,15 @@ export function parseEngagementCsv(
       })
       .filter(Boolean)
       .join(", ");
+    const label =
+      channel === "organic_social" ? "Organic social engagement" : "LinkedIn company engagement";
     touches.push({
       companyName: name,
       domain: domainCol >= 0 ? (row[domainCol] ?? "").trim() : "",
       date,
-      detail: metrics ? `LinkedIn company engagement — ${metrics}` : "LinkedIn company engagement",
+      detail: metrics ? `${label} — ${metrics}` : label,
       campaign: campaignCol >= 0 && row[campaignCol]?.trim() ? row[campaignCol].trim() : campaignFromFile,
+      channel,
     });
   }
   return touches;
@@ -162,12 +170,85 @@ export async function loadCompanyEngagementCsvs(): Promise<CompanyLevelTouch[]> 
     for (const file of files) {
       const full = join(dir, file);
       const [content, info] = await Promise.all([readFile(full, "utf8"), stat(full)]);
-      const touches = parseEngagementCsv(file, content, info.mtime);
+      const touches = parseEngagementCsv(file, content, info.mtime, "linkedin_visibility");
       console.log(`imports/${file}: ${touches.length} company engagement rows`);
       all.push(...touches);
     }
     return all;
   } catch {
     return []; // no imports directory — feature simply inactive
+  }
+}
+
+// ── Uploaded imports (Vercel Blob, managed via the dashboard's Imports tab) ──
+
+export const BLOB_IMPORT_PREFIX = "marketing-influence/imports/";
+
+/** Channels selectable when uploading a CSV through the dashboard. */
+export const UPLOAD_CHANNELS: Channel[] = ["linkedin_visibility", "organic_social", "paid_social"];
+
+export interface BlobImport {
+  pathname: string;
+  filename: string;
+  channel: Channel;
+  uploadedAt: string;
+  size: number;
+}
+
+export function parseImportPathname(pathname: string): { channel: Channel; filename: string } | null {
+  if (!pathname.startsWith(BLOB_IMPORT_PREFIX)) return null;
+  const rest = pathname.slice(BLOB_IMPORT_PREFIX.length);
+  const slash = rest.indexOf("/");
+  if (slash <= 0) return null;
+  const channel = rest.slice(0, slash) as Channel;
+  if (!UPLOAD_CHANNELS.includes(channel)) return null;
+  return { channel, filename: rest.slice(slash + 1) };
+}
+
+export async function listBlobImports(): Promise<BlobImport[]> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return [];
+  const { list } = await import("@vercel/blob");
+  const { blobs } = await list({ prefix: BLOB_IMPORT_PREFIX, limit: 1000 });
+  const out: BlobImport[] = [];
+  for (const b of blobs) {
+    const parsed = parseImportPathname(b.pathname);
+    if (!parsed) continue;
+    out.push({
+      pathname: b.pathname,
+      filename: parsed.filename,
+      channel: parsed.channel,
+      uploadedAt: new Date(b.uploadedAt).toISOString(),
+      size: b.size,
+    });
+  }
+  return out.sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+}
+
+/** Load + parse every uploaded CSV from Blob storage. */
+export async function loadBlobImportCsvs(): Promise<CompanyLevelTouch[]> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return [];
+  try {
+    const { list } = await import("@vercel/blob");
+    const { blobs } = await list({ prefix: BLOB_IMPORT_PREFIX, limit: 1000 });
+    const all: CompanyLevelTouch[] = [];
+    for (const b of blobs) {
+      const parsed = parseImportPathname(b.pathname);
+      if (!parsed) continue;
+      const res = await fetch(b.url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const content = await res.text();
+      const touches = parseEngagementCsv(
+        parsed.filename,
+        content,
+        new Date(b.uploadedAt),
+        parsed.channel
+      );
+      console.log(`blob import ${b.pathname}: ${touches.length} rows (${parsed.channel})`);
+      all.push(...touches);
+    }
+    return all;
+  } catch (err) {
+    console.error("Blob import load failed (continuing without):", err);
+    return [];
   }
 }

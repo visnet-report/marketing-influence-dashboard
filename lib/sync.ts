@@ -3,7 +3,7 @@
 import { fetchAllCompanies, fetchAllDeals, fetchDealStages, fetchMarketingContacts } from "./hubspot";
 import { computeSnapshot } from "./influence";
 import { fetchLinkedInCompanyVisibility, linkedInConfigured } from "./linkedin-api";
-import { loadCompanyEngagementCsvs } from "./linkedin-csv";
+import { loadBlobImportCsvs, loadCompanyEngagementCsvs } from "./linkedin-csv";
 import { saveSnapshot } from "./store";
 import type { Snapshot } from "./types";
 
@@ -23,11 +23,13 @@ export interface SyncResult {
 export async function runSync(): Promise<SyncResult> {
   const started = Date.now();
   const stages = await fetchDealStages();
-  const [companies, deals, contacts, csvTouches, apiTouches] = await Promise.all([
+  const [companies, deals, contacts, csvTouches, uploadedTouches, apiTouches] = await Promise.all([
     fetchAllCompanies(),
     fetchAllDeals(stages),
     fetchMarketingContacts(),
     loadCompanyEngagementCsvs(),
+    // CSVs uploaded through the dashboard's Imports tab (Vercel Blob)
+    loadBlobImportCsvs(),
     // Paid LinkedIn visibility straight from the Ads API when configured;
     // a failure here must not take down the HubSpot sync.
     linkedInConfigured()
@@ -39,6 +41,7 @@ export async function runSync(): Promise<SyncResult> {
   ]);
   const snapshot: Snapshot = computeSnapshot(companies, deals, contacts, started, [
     ...csvTouches,
+    ...uploadedTouches,
     ...apiTouches,
   ]);
   await saveSnapshot(snapshot);

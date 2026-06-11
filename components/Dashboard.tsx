@@ -8,15 +8,17 @@ import DealsTable from "./DealsTable";
 import CompaniesTable from "./CompaniesTable";
 import MatchingAudit from "./MatchingAudit";
 import DateFilter from "./DateFilter";
+import ImportsPanel from "./ImportsPanel";
 import { fmtDateTime } from "./ui";
 
-type Tab = "overview" | "deals" | "companies" | "matching";
+type Tab = "overview" | "deals" | "companies" | "matching" | "imports";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "deals", label: "Influenced Deals" },
   { id: "companies", label: "Companies" },
   { id: "matching", label: "Matching Audit" },
+  { id: "imports", label: "Data Imports" },
 ];
 
 export default function Dashboard() {
@@ -25,7 +27,7 @@ export default function Dashboard() {
   const [tab, setTab] = useState<Tab>("overview");
   const [range, setRange] = useState<DateRange>(ALL_TIME);
 
-  useEffect(() => {
+  const loadData = () => {
     fetch("/api/data")
       .then(async (res) => {
         if (!res.ok) {
@@ -34,9 +36,15 @@ export default function Dashboard() {
         }
         return res.json();
       })
-      .then(setSnapshot)
+      .then((s) => {
+        setSnapshot(s);
+        setError(null);
+      })
       .catch((err) => setError(err.message));
-  }, []);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(loadData, []);
 
   if (error) {
     return (
@@ -86,13 +94,16 @@ export default function Dashboard() {
           </button>
         ))}
       </nav>
-      <div className="mb-6">
-        <DateFilter value={range} onChange={setRange} minDate={minDate} />
-      </div>
+      {tab !== "imports" && (
+        <div className="mb-6">
+          <DateFilter value={range} onChange={setRange} minDate={minDate} />
+        </div>
+      )}
       {tab === "overview" && <Overview snapshot={snapshot} range={range} />}
       {tab === "deals" && <DealsTable snapshot={snapshot} range={range} />}
       {tab === "companies" && <CompaniesTable snapshot={snapshot} range={range} />}
       {tab === "matching" && <MatchingAudit snapshot={snapshot} range={range} />}
+      {tab === "imports" && <ImportsPanel onDataChanged={loadData} />}
     </Shell>
   );
 }

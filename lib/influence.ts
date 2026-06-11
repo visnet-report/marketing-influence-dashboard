@@ -249,7 +249,7 @@ export function computeSnapshot(
         contactName: row.companyName,
         contactEmail: "",
         contactCompanyText: row.companyName,
-        channel: "linkedin_visibility",
+        channel: row.channel ?? "linkedin_visibility",
         date: row.date,
         detail: row.detail,
         campaign: row.campaign,
@@ -267,11 +267,11 @@ export function computeSnapshot(
         contactName: row.companyName,
         contactEmail: "",
         contactCompanyText: row.companyName,
-        channels: ["linkedin_visibility"],
+        channels: [row.channel ?? "linkedin_visibility"],
         firstActivity: row.date,
         lastActivity: row.date,
         touchCount: 1,
-        reason: "LinkedIn engagement report company not found in CRM",
+        reason: "Imported report company not found in CRM",
       });
     }
   }

@@ -189,6 +189,7 @@ export async function fetchLinkedInCompanyVisibility(): Promise<CompanyLevelTouc
       date,
       detail: `LinkedIn Ads company visibility — ${metrics}`,
       campaign: "LinkedIn Ads (API, account-level)",
+      channel: "linkedin_visibility",
     });
   }
   console.log(
