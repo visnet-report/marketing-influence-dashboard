@@ -54,9 +54,10 @@ Typos like “EA Tecnology” match at Tier 4. Tune the lists/thresholds in
 |---|---|
 | Form submissions | `first_conversion_*`, `recent_conversion_*` contact properties |
 | Paid search | `hs_analytics_source` / `hs_latest_source` = PAID_SEARCH (+ campaign drill-downs) |
-| Paid social (LinkedIn) | …= PAID_SOCIAL (+ LinkedIn campaign name) |
-| Organic social | …= SOCIAL_MEDIA (+ post/campaign reference) |
-| Organic search / Email / Other | corresponding source values |
+| Paid LinkedIn (Contact) | …= PAID_SOCIAL (+ LinkedIn campaign name) |
+| Organic LinkedIn (Contact) | …= SOCIAL_MEDIA (+ post/campaign reference) |
+| Organic search / Email / Referrals / AI Referrals / Other | corresponding source values (DIRECT_TRAFFIC and OFFLINE are deliberately excluded — not marketing-driven) |
+| **Organic LinkedIn Visibility (Company)** | HubSpot **Buyer Intent company lists** via `HUBSPOT_LIST_TOUCHES` (members become touches dated when they joined the list; needs `crm.lists.read` scope), or CSV uploads via the Data Imports tab |
 | **LinkedIn Visibility (Company)** | Two feeds, same channel: (a) **automated** — LinkedIn Ads API `adAnalytics` pivoted by member company, pulled on every nightly sync when `LINKEDIN_*` env vars are set (paid impressions/clicks/engagements per company per day); (b) **uploaded** — Company Engagement Report CSVs via the dashboard's **Data Imports** tab (stored in Vercel Blob; the only source that also covers *organic* company engagement) |
 | **Organic Social (uploads)** | Company-level organic engagement CSVs uploaded via the **Data Imports** tab with the "Organic Social" channel — engager exports, social listening reports, event lists. Any CSV with a `Company Name`/`Company` column works; optional `Domain` improves match confidence |
 

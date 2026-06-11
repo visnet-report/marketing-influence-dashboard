@@ -57,10 +57,16 @@ function sourceToChannel(source: string): Channel | null {
       return "organic_search";
     case "EMAIL_MARKETING":
       return "email_marketing";
+    case "REFERRALS":
+      return "referral";
+    case "AI_REFERRALS":
+      return "ai_referral";
     case "OTHER_CAMPAIGNS":
       return "other";
     default:
-      return null; // DIRECT_TRAFFIC, OFFLINE, REFERRALS → not marketing touches
+      // DIRECT_TRAFFIC and OFFLINE are deliberately excluded: neither is a
+      // marketing-driven touch (typed URL / imported record).
+      return null;
   }
 }
 
@@ -242,25 +248,37 @@ export function computeSnapshot(
   for (const row of companyLevelTouches) {
     csvIdx++;
     totalTouchpoints++;
-    const match = matchContactToCompany(
-      {
-        id: `li-csv-${csvIdx}`,
-        email: row.domain ? `report@${row.domain}` : "",
-        companyText: row.companyName,
-        associatedCompanyId: "",
-        country: "",
-      },
-      index
-    );
+    // Rows that carry a HubSpot company ID (e.g. Buyer Intent list members)
+    // match directly; everything else goes through domain/name matching.
+    const match: CompanyMatch | null =
+      row.companyId && companyById.has(row.companyId)
+        ? {
+            companyId: row.companyId,
+            method: "company_id",
+            confidence: "High",
+            score: 1,
+            evidence: "HubSpot list membership (company ID)",
+          }
+        : matchContactToCompany(
+            {
+              id: `li-csv-${csvIdx}`,
+              email: row.domain ? `report@${row.domain}` : "",
+              companyText: row.companyName,
+              associatedCompanyId: "",
+              country: "",
+            },
+            index
+          );
     if (match) {
       matchMethodCounts[match.method]++;
       confidenceCounts[match.confidence]++;
+      const matchedName = row.companyName || companyById.get(match.companyId)?.name || "";
       const list = touchesByCompany.get(match.companyId) ?? [];
       list.push({
         contactId: `li-csv-${csvIdx}`,
-        contactName: row.companyName,
+        contactName: matchedName,
         contactEmail: "",
-        contactCompanyText: row.companyName,
+        contactCompanyText: matchedName,
         channel: row.channel ?? "linkedin_visibility",
         date: row.date,
         detail: row.detail,

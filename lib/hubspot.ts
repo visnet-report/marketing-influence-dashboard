@@ -1,8 +1,10 @@
 // ── HubSpot REST client ────────────────────────────────────────────────────────
-// Pulls companies, deals (+company associations), pipeline stage labels, and
-// marketing-engaged contacts using a Private App access token.
+// Pulls companies, deals (+company associations), pipeline stage labels,
+// marketing-engaged contacts, and company-list touches (e.g. Buyer Intent
+// lists) using a Private App access token.
 
-import type { CrmCompany, CrmDeal } from "./types";
+import type { CompanyLevelTouch } from "./linkedin-csv";
+import type { Channel, CrmCompany, CrmDeal } from "./types";
 
 const API_BASE = process.env.HUBSPOT_API_BASE || "https://api.hubapi.com";
 
@@ -181,6 +183,8 @@ const MARKETING_SOURCES = [
   "SOCIAL_MEDIA",
   "ORGANIC_SEARCH",
   "EMAIL_MARKETING",
+  "REFERRALS",
+  "AI_REFERRALS",
   "OTHER_CAMPAIGNS",
 ];
 
@@ -239,4 +243,76 @@ export async function fetchMarketingContacts(): Promise<MarketingContact[]> {
     after = data.paging?.next?.after;
   } while (after);
   return contacts;
+}
+
+// ── Company-list touches (HubSpot Buyer Intent lists etc.) ────────────────────
+// HUBSPOT_LIST_TOUCHES maps HubSpot company-list IDs to influence channels:
+//   "301:organic_social_visibility,302:linkedin_visibility"
+// Each list member becomes a company-level touch dated at the moment the
+// company joined the list (join-order membership timestamp), matched directly
+// by company ID. Requires the crm.lists.read scope on the Private App.
+
+const LIST_TOUCH_CHANNELS = new Set<Channel>([
+  "organic_social_visibility",
+  "linkedin_visibility",
+  "organic_social",
+  "paid_social",
+  "referral",
+  "other",
+]);
+
+export async function fetchCompanyListTouches(): Promise<CompanyLevelTouch[]> {
+  const raw = process.env.HUBSPOT_LIST_TOUCHES ?? "";
+  const configs = raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [listId, channel] = entry.split(":").map((s) => s.trim());
+      return { listId, channel: channel as Channel };
+    })
+    .filter((c) => c.listId && LIST_TOUCH_CHANNELS.has(c.channel));
+  if (!configs.length) return [];
+
+  const touches: CompanyLevelTouch[] = [];
+  for (const { listId, channel } of configs) {
+    try {
+      let listName = `HubSpot list ${listId}`;
+      try {
+        const meta = await hsFetch(`/crm/v3/lists/${listId}`);
+        if (meta?.list?.name) listName = meta.list.name;
+      } catch {
+        // name lookup is cosmetic — continue with the fallback label
+      }
+      let after: string | undefined;
+      let count = 0;
+      do {
+        const qs = new URLSearchParams({ limit: "250" });
+        if (after) qs.set("after", after);
+        const data = await hsFetch(`/crm/v3/lists/${listId}/memberships/join-order?${qs}`);
+        for (const r of data.results ?? []) {
+          const companyId = String(r.recordId ?? "");
+          if (!companyId) continue;
+          touches.push({
+            companyId,
+            companyName: "",
+            domain: "",
+            date: r.membershipTimestamp ?? new Date().toISOString(),
+            detail: `HubSpot intent list — ${listName}`,
+            campaign: listName,
+            channel,
+          });
+          count++;
+        }
+        after = data.paging?.next?.after;
+      } while (after);
+      console.log(`HubSpot list ${listId} (${listName}): ${count} company touches (${channel})`);
+    } catch (err) {
+      console.error(
+        `HubSpot list ${listId} fetch failed (is crm.lists.read scope granted?):`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+  return touches;
 }

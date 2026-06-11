@@ -3,13 +3,15 @@
 export type Channel =
   | "form_submission"
   | "paid_search"
-  | "paid_social"
-  | "organic_social"
+  | "paid_social" // person clicked a paid LinkedIn ad → identified contact
+  | "organic_social" // person came via an organic social post → identified contact
   | "organic_search"
   | "email_marketing"
   | "referral"
+  | "ai_referral"
   | "direct"
-  | "linkedin_visibility"
+  | "linkedin_visibility" // company-level paid ad visibility (LinkedIn Ads API / CSV)
+  | "organic_social_visibility" // company-level organic visibility (intent list / CSV)
   | "other";
 
 export type MatchMethod = "company_id" | "email_domain" | "exact_name" | "fuzzy_name";

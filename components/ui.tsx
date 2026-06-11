@@ -5,13 +5,15 @@ import type { Channel, Confidence, MatchMethod } from "@/lib/types";
 export const CHANNEL_LABELS: Record<Channel, string> = {
   form_submission: "Form Submissions",
   paid_search: "Paid Search",
-  paid_social: "Paid Social (LinkedIn)",
-  organic_social: "Organic Social",
+  paid_social: "Paid LinkedIn (Contact)",
+  organic_social: "Organic LinkedIn (Contact)",
   organic_search: "Organic Search",
   email_marketing: "Email Marketing",
-  referral: "Referral",
+  referral: "Referrals",
+  ai_referral: "AI Referrals",
   direct: "Direct",
-  linkedin_visibility: "LinkedIn Visibility (Company)",
+  linkedin_visibility: "Paid LinkedIn Visibility (Company)",
+  organic_social_visibility: "Organic LinkedIn Visibility (Company)",
   other: "Other Campaigns",
 };
 
@@ -23,8 +25,10 @@ export const CHANNEL_COLORS: Record<Channel, string> = {
   organic_search: "#2dd4bf",
   email_marketing: "#f472b6",
   referral: "#a3e635",
+  ai_referral: "#e879f9",
   direct: "#94a3b8",
   linkedin_visibility: "#60a5fa",
+  organic_social_visibility: "#4ade80",
   other: "#c084fc",
 };
 

@@ -15,18 +15,13 @@ interface BlobImport {
 const CHANNEL_OPTIONS: { value: Channel; label: string; hint: string }[] = [
   {
     value: "linkedin_visibility",
-    label: "LinkedIn Visibility (Company)",
-    hint: "Campaign Manager → Company Engagement Report export (paid impressions + ad/organic engagement)",
+    label: "Paid LinkedIn Visibility (Company)",
+    hint: "Campaign Manager → Company Engagement Report export (paid impressions + ad engagement). Note: the LinkedIn Ads API already feeds this channel automatically — upload only for periods/accounts the API doesn't cover.",
   },
   {
-    value: "organic_social",
-    label: "Organic Social",
-    hint: "Companies that engaged with organic posts (engager exports, social tool reports)",
-  },
-  {
-    value: "paid_social",
-    label: "Paid Social (LinkedIn)",
-    hint: "Other paid-social company lists (e.g. lead gen campaign account lists)",
+    value: "organic_social_visibility",
+    label: "Organic LinkedIn Visibility (Company)",
+    hint: "Companies that saw/engaged organic social content — HubSpot Buyer Intent view exports, engager lists. Tip: a HubSpot intent LIST can feed this automatically (HUBSPOT_LIST_TOUCHES, see README).",
   },
 ];
 

@@ -20,6 +20,8 @@ export interface CompanyLevelTouch {
   campaign: string;
   /** Which marketing channel this company-level touch belongs to. */
   channel: Channel;
+  /** When set (e.g. HubSpot list membership), skips name matching entirely. */
+  companyId?: string;
 }
 
 const NAME_COLUMNS = ["company name", "companyname", "company", "account", "company page", "organization"];
@@ -144,7 +146,9 @@ export function parseEngagementCsv(
       .filter(Boolean)
       .join(", ");
     const label =
-      channel === "organic_social" ? "Organic social engagement" : "LinkedIn company engagement";
+      channel === "organic_social_visibility"
+        ? "Organic social company visibility"
+        : "LinkedIn company engagement";
     touches.push({
       companyName: name,
       domain: domainCol >= 0 ? (row[domainCol] ?? "").trim() : "",
@@ -185,7 +189,7 @@ export async function loadCompanyEngagementCsvs(): Promise<CompanyLevelTouch[]> 
 export const BLOB_IMPORT_PREFIX = "marketing-influence/imports/";
 
 /** Channels selectable when uploading a CSV through the dashboard. */
-export const UPLOAD_CHANNELS: Channel[] = ["linkedin_visibility", "organic_social", "paid_social"];
+export const UPLOAD_CHANNELS: Channel[] = ["linkedin_visibility", "organic_social_visibility"];
 
 export interface BlobImport {
   pathname: string;
